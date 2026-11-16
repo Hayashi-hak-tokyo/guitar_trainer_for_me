@@ -751,6 +751,26 @@
       [["4.",[[2,9],[3,11],[4,8]]],["8",[[1,11],[2,9],[3,11],[4,8]],"-"],["2",[[1,11],[2,9],[3,11],[4,8]],"-"]], // 69 Gb/Eb
       [["1",[[1,11],[2,9],[3,11],[4,8]]]]                                                           // 70
     ];
+    // ラーゲ・ルンドの採譜（いただいたTAB譜3点から）。書式は SOLO_FLIGHT_SF と同じ
+    // 1小節2コードの小節も、前半・後半それぞれのコードのルートからのオフセットでフレーズにする
+    const LAGE_TRANS_SF = [
+      // ── 1つ目（キーG）：Am7 | Cm7 F7 | Bm7 E7 | Bbm7 Eb7 ──（2声のダイアドで動くフレーズ）
+      [["8",4,7],["8",5,7],["8",4,7],["8",4,10],["8",3,9],["8",2,10],["8",1,8],["8",[[1,10],[3,10]],"-"]],
+      [["4",[[1,10],[3,10]]],["4",1,8],["z4"],["4",[[1,10],[3,11]]]],
+      [["8",[[1,10],[3,11]]],["8",1,9],["z8"],["8",[[1,12],[3,13]],"-"],["8",[[1,12],[3,13]]],["8",1,10],["z8"],["8",[[1,13],[3,13]],"-"]],
+      [["8",[[1,13],[3,13]]],["8",1,11],["z8"],["8",[[1,11],[3,12]],"-"],["8",[[1,11],[3,12]]],["8",1,9],["z8"],["8",[[1,12],[3,12]]]],
+      // ── 2つ目（キーEbm）：Ebm9 | Ebm9 | Ab7#5 | Ab7#5 ──（オクターブ、3連、アッパー・ストラクチャーのDトライアド）
+      [["4.",[[1,6],[3,3]]],["8",2,7],["4",2,6],["4",4,7,"-"]],
+      [["8",4,7],["4.",4,5],["4",2,6],["trip8",2,6],["trip8",3,6],["trip8",2,4]],
+      [["2",1,0],["2",[[2,2],[3,5],[4,3]]]],
+      [["2",[[2,3],[3,2],[4,4]],"-"],["8",[[2,3],[3,2],[4,4]]],["8",2,4],["16",1,4],["16",2,6],["16",3,5],["16",4,6]],
+      // ── 3つ目（キーG）：G | Bbm7 Eb7 | Am7 | B7 ──（低音域のライン、間を空けた3声のコード）
+      [["2",5,4],["4",3,3],["z4"]],
+      [["4.",3,5],["8",4,6],["8",5,6],["z8"],["8",3,5],["8",3,4,"-"]],
+      [["4",3,4],["z4"],["4",[[2,3],[3,5],[4,5]]],["z4"]],
+      [["z4"],["4",[[2,6],[3,5],[4,7]]],["z4"],["z8"],["8",3,3]]
+    ];
+    const LAGE_TRANS_CHORDS = ["Am7", "Cm7 F7", "Bm7 E7", "Bbm7 Eb7", "Ebm9", "Ebm9", "Ab7#5", "Ab7#5", "G", "Bbm7 Eb7", "Am7", "B7"];
     const GREEN_DOLPHIN_CHORDS = [
       "BM7", "EM7", "Eb", "Eb", "GbM7/Eb", "GbM7/Eb", "F/Eb", "E/Eb",
       "Eb", "Gm7b5 C7", "Fm7", "Bb7", "EbM7", "Eb7", "Abm7", "Db7",
@@ -1547,20 +1567,22 @@
       const out = [];
       sf.forEach((bar, bi) => {
         const chordStr = chordList[bi];
-        if (!chordStr || chordStr.trim().split(/\s+/).length !== 1) return;   // 2コードの小節は除外
+        const parts = (chordStr || "").trim().split(/\s+/).filter(Boolean);
+        if (!parts.length || parts.length > 2 || (parts.length === 2 && !opts.allowTwo)) return;   // 2コードの小節は allowTwo のときだけ
         if (!opts.allowChords && bar.some(ev => Array.isArray(ev[1]))) return;
         const prevBar = bi > 0 ? sf[bi - 1] : null;
         let tiedIn = !!(prevBar && prevBar.length && sfTie(prevBar[prevBar.length - 1]));
-        const p = [], notes = [];
-        let ok = true;
+        const p = [], notes = [], noteBeats = [];
+        let ok = true, curBeat = 0;
         for (let ei = 0; ei < bar.length && ok; ei++) {
           const ev = bar[ei];
-          if (ev[0].startsWith("z")) { p.push(ev[0]); continue; }
+          if (ev[0].startsWith("z")) { p.push(ev[0]); curBeat += SF_DUR_BEATS[ev[0].slice(1)] || ({ z8: .5, z4: 1, z2: 2, z1: 4, z16: .25 })[ev[0]] || 0; continue; }
           let beats = SF_DUR_BEATS[ev[0]];
           if (beats === undefined) { ok = false; break; }
           if (ei === 0 && tiedIn) {                                             // 前の小節からのタイは休符扱い
-            const r = BEATS_TO_REST[beats]; if (!r) { ok = false; break; } p.push(...r); continue;
+            const r = BEATS_TO_REST[beats]; if (!r) { ok = false; break; } p.push(...r); curBeat += beats; continue;
           }
+          const startBeat = curBeat;
           // この小節の中で次の音にタイでつながる場合は、長さを足して1つの音にする
           let j = ei;
           while (sfTie(bar[j]) && j + 1 < bar.length) { j++; beats += SF_DUR_BEATS[bar[j][0]] || 0; }
@@ -1570,18 +1592,31 @@
           if (!durName) { ok = false; break; }
           p.push(durName);
           notes.push(Array.isArray(ev[1]) ? ev[1].map(([s, f]) => sfMidi(s, f)) : sfMidi(ev[1], ev[2]));
+          noteBeats.push(startBeat);
+          curBeat += beats;
         }
         if (!ok || notes.length < 3) return;
-        const rootPc = parseChord(chordStr).rootPc;
-        const lo = Math.min(...notes.flat());
-        const ref = rootPc + 12 * Math.floor((lo - rootPc) / 12);
-        const toD = (m) => Array.isArray(m) ? m.slice().sort((x, y) => y - x).map(x => "s" + (x - ref)) : "s" + (m - ref);
-        out.push({ cat: `${catName} ${bi + 1}`, p, d: notes.map(toD), q: [chordQuality(chordStr)], authentic: true, w: weight });
+        // 前半・後半それぞれ、そのコードのルート（一番低い音の下）からのオフセットにする
+        const half = (k) => parts.length === 2 && noteBeats[k] >= 2 - 1e-6 ? 1 : 0;
+        const refs = [0, 1].map(h => {
+          const ns = notes.filter((_, k) => half(k) === h).flat();
+          const rootPc = parseChord(parts[Math.min(h, parts.length - 1)]).rootPc;
+          if (!ns.length) return rootPc + 48;
+          const lo = Math.min(...ns);
+          return rootPc + 12 * Math.floor((lo - rootPc) / 12);
+        });
+        const toD = (m, k) => { const ref = refs[half(k)]; return Array.isArray(m) ? m.slice().sort((x, y) => y - x).map(x => "s" + (x - ref)) : "s" + (m - ref); };
+        const cellOut = { cat: `${catName} ${bi + 1}`, p, d: notes.map(toD), q: [chordQuality(parts[0])], authentic: true, w: weight };
+        if (parts.length === 2) cellOut.q2 = [chordQuality(parts[1])];
+        out.push(cellOut);
       });
       return out;
     };
     const CHRISTIAN_PHRASES = extractPhrases(SOLO_FLIGHT_SF, SOLO_FLIGHT_CHORDS, "Christian Solo Flight", CHRISTIAN_WEIGHT);
-    const LAGE_PHRASES = extractPhrases(GREEN_DOLPHIN_SF, GREEN_DOLPHIN_CHORDS, "Lage Green Dolphin", 2.0, { allowChords: true });
+    const LAGE_PHRASES = [
+      ...extractPhrases(GREEN_DOLPHIN_SF, GREEN_DOLPHIN_CHORDS, "Lage Green Dolphin", 2.0, { allowChords: true }),
+      ...extractPhrases(LAGE_TRANS_SF, LAGE_TRANS_CHORDS, "Lage Transcription", 2.5, { allowChords: true, allowTwo: true })
+    ];
 
     // フレーズ辞書（トライアド、展開形、Drop2、3度代理、ディミニッシュ、パーカー、クリスチャン、Donna Lee抽出 など）
     const PHRASE_DICTIONARY = [
