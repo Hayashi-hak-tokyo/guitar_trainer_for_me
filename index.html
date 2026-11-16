@@ -1619,6 +1619,11 @@
     ];
 
     // フレーズ辞書（トライアド、展開形、Drop2、3度代理、ディミニッシュ、パーカー、クリスチャン、Donna Lee抽出 など）
+    // 2音の往復や同音連打だけの小節（元のソロでは前後の文脈で効くリフ）は、単独のフレーズとしては使わない
+    const isMonotonePhrase = (d) => {
+      const tops = (d || []).map(x => Array.isArray(x) ? x[0] : x);
+      return tops.length >= 4 && new Set(tops.map(String)).size <= 2;
+    };
     const PHRASE_DICTIONARY = [
       // 1. トライアド＆展開形 (4拍目を8分で動かす)
       { cat: "Triad Root",        p: ["8","8", "8","8", "8","8", "8","8"], d: ['R', '3', '5', '3', '5', 'R8', '38', 'R8'] },
@@ -1692,7 +1697,7 @@
       ...PRELUDE_PHRASES,
       // 13. 2小節にまたがる ii-V（Donna Lee／Chromatic Fantasy）
       ...IIV_2BAR_PHRASES
-    ];
+    ].filter(c => !isMonotonePhrase(c.d) && !(c.d2 && isMonotonePhrase(c.d2)));
 
     // 16分系（16分・3連16分）を含むフレーズか
     const hasSixteenth = (cell) => [...cell.p, ...(cell.p2 || [])].some(x => x === "16" || x === "trip16");
@@ -3370,7 +3375,10 @@
                   !c.d.some(Array.isArray) && c.d.length >= 3 && (allow16th || !hasSixteenth(c)) && c.p.some(x => x !== "8"));
                 const deg1 = getChordDegrees(chord1);
                 const picks = [];
-                for (let k = 0; k < 12 && donors.length; k++) picks.push(makeTriadFromDonor(donors[Math.floor(Math.random() * donors.length)], chord1, deg1));
+                for (let k = 0; k < 24 && donors.length && picks.length < 12; k++) {
+                  const tc = makeTriadFromDonor(donors[Math.floor(Math.random() * donors.length)], chord1, deg1);
+                  if (!isMonotonePhrase(tc.d)) picks.push(tc);   // トライアドに寄せた結果2音の往復になったものは捨てる
+                }
                 // 借りたリズムを中心に、元のトライアド音形も少し残す
                 const plain = pool.slice().sort(() => Math.random() - 0.5).slice(0, 4);
                 if (picks.length) pool = [...picks, ...plain];
