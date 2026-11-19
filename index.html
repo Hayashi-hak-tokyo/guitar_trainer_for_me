@@ -1067,7 +1067,7 @@
       const third = chord.isMinor || chord.isDim ? 3 : 4;
       const seventh = chord.isMajor ? 11 : 10;
       const semis = {}; // 's5' = ルートから+5半音（Donna Lee抽出フレーズ用の絶対オフセット）
-      for (let n = -24; n <= 36; n++) semis['s' + n] = n;
+      for (let n = -48; n <= 60; n++) semis['s' + n] = n;
       return {
         ...semis,
         'R': 0, 'b2': 1, '2': 2, 'b9': 1, '9': 2, '#9': 3,
@@ -1286,7 +1286,7 @@
       { cat: "Parker Donna Lee 57", p:["8","8","8","8","8","8","8","8"], d:["s7","s10","s12","s14","s17","s15","s14","s12"], q:["min"], authentic:true }, // bar 57 Fm7
       { cat: "Parker Donna Lee 58", p:["8","8","8","8","8","8","8","8"], d:["s16","s7","s10","s13","s10","s7","s12","s7"], q:["dom"], authentic:true }, // bar 58 C7
       { cat: "Parker Donna Lee 59", p:["8","8","8","8","z2"], d:["s17","s14","s13","s11"], q:["min"], authentic:true }, // bar 59 Fm7
-      { cat: "Parker Donna Lee 61", p:["z8","8","trip8","trip8","trip8","8","8","8","8"], d:["s11","s12","s15","s19","s20","s0","s2","s3"], q:["min"],q2:["dom"], authentic:true }, // bar 61 Cm7 F7
+      { cat: "Parker Donna Lee 61", p:["z8","8","trip8","trip8","trip8","8","8","8","8"], d:["s11","s12","s15","s19","s3","s0","s2","s3"], q:["min"],q2:["dom"], authentic:true }, // bar 61 Cm7 F7（3拍目のAbは後半＝F7基準の s3）
       { cat: "Parker Donna Lee 62", p:["trip16","trip16","trip16","8","4","z4","z8","8"], d:["s9","s10","s9","s7","s10","s20"], q:["min"],q2:["dom"], authentic:true }, // bar 62 Bbm7 Eb7
       { cat: "Parker Donna Lee 63", p:["trip8","trip8","trip8","8","8","8","8","trip16","trip16","trip16","8"], d:["s4","s7","s11","s12","s9","s11","s12","s11","s12","s11","s9"], q:["maj"], authentic:true }, // bar 63 Abmaj7
       { cat: "Parker Donna Lee 65", p:["8","8","trip16","trip16","trip16","8","8","8","8","8"], d:["s11","s12","s11","s12","s11","s9","s12","s11","s9","s8"], q:["maj"], authentic:true }, // bar 65 Abmaj7
@@ -1622,7 +1622,8 @@
     // 2音の往復や同音連打だけの小節（元のソロでは前後の文脈で効くリフ）は、単独のフレーズとしては使わない
     const isMonotonePhrase = (d) => {
       const tops = (d || []).map(x => Array.isArray(x) ? x[0] : x);
-      return tops.length >= 4 && new Set(tops.map(String)).size <= 2;
+      const n = new Set(tops.map(String)).size;
+      return (tops.length >= 4 && n <= 2) || (tops.length >= 3 && n === 1);   // 3音とも同じ音だけの小節も外す
     };
     const PHRASE_DICTIONARY = [
       // 1. トライアド＆展開形 (4拍目を8分で動かす)
@@ -1880,6 +1881,79 @@
       return `[${r}${t}${s}]4`;
     };
 
+
+    // ============ 7ポジション・システム（本吉大我氏） ============
+    // 7音スケールを、6弦の開始音（スケールの何音目から始めるか）で7つのポジションに分ける。
+    // 各弦3音ずつ順に上がり、2弦だけは3弦の最後の音をもう一度弾いてから始める（だいたい5フレットの範囲に収まる）。
+    // メジャー系はイオニアン〜ロクリアンの7つ（ナチュラルマイナーはエオリアン・ポジションとして区別しない）
+    const POS_FAMS = {
+      MAJ: { pcs: [0, 2, 4, 5, 7, 9, 11], names: ["Ion", "Dor", "Phr", "Lyd", "Mix", "Aeo", "Loc"],
+        full: ["Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian"], label: "メジャー" },
+      MM: { pcs: [0, 2, 3, 5, 7, 9, 11], names: ["MM", "Dor♭2", "Lyd♯5", "Lyd♭7", "Mix♭13", "Aeo♭5", "Alt"],
+        full: ["Melodic minor", "Dorian ♭2", "Lydian ♯5", "Lydian ♭7", "Mixolydian ♭13", "Aeolian ♭5", "Altered"], label: "メロディックマイナー" },
+      HM: { pcs: [0, 2, 3, 5, 7, 8, 11], names: ["HM", "Loc♮6", "Ion♯5", "Dor♯4", "PhrD", "Lyd♯2", "Alt♭♭7"],
+        full: ["Harmonic minor", "Locrian ♮6", "Ionian ♯5", "Dorian ♯4", "Phrygian dominant", "Lydian ♯2", "Altered ♭♭7"], label: "ハーモニックマイナー" }
+    };
+    const _posCache = {};
+    const sevenPositions = (par) => {
+      const key = par.fam + par.root;
+      if (_posCache[key]) return _posCache[key];
+      const fam = POS_FAMS[par.fam], out = [];
+      const ladder = []; for (let m = 28; m <= 100; m++) if (fam.pcs.includes(((m - par.root) % 12 + 12) % 12)) ladder.push(m);
+      for (let k = 0; k < 7; k++) {
+        const startPc = (par.root + fam.pcs[k]) % 12;
+        for (let f0 = ((startPc - 4) % 12 + 12) % 12; f0 <= MAX_FRET; f0 += 12) {
+          let i = ladder.indexOf(GUITAR_STRINGS[0] + f0);
+          const cells = [];
+          for (let st = 0; st < 6; st++) {
+            if (st === 4) i--;                                   // 2弦は3弦の最後の音から
+            for (let n = 0; n < 3; n++, i++) cells.push({ s: st, f: ladder[i] - GUITAR_STRINGS[st], midi: ladder[i] });
+          }
+          const frets = cells.map(c => c.f);
+          const min = Math.min(...frets), max = Math.max(...frets);
+          if (min < 1 || max > MAX_FRET) continue;
+          out.push({ key: `${key}-${k}-${f0}`, par, k, min, max, set: new Set(cells.map(c => c.s + ":" + c.f)),
+            name: `${PC_NAMES[startPc]} ${fam.names[k]}(${PC_NAMES[par.root]})`, full: `${PC_NAMES[startPc]} ${fam.full[k]}（${PC_NAMES[par.root]} ${fam.label}）` });
+        }
+      }
+      return (_posCache[key] = out);
+    };
+    // コードから「どのスケールのポジションで弾くか」（親スケール）を決める。前と同じ親スケールで済むならそれを続ける
+    const chordParent = (name, prevName, nextName, prevParent) => {
+      const c = parseChord(name), q = chordQuality(name), r = c.rootPc;
+      const t = String(name || "").replace(/^[A-G][#b]?/, "").split("/")[0];
+      const P = (fam, k) => ({ fam, root: (r + k) % 12 });
+      const iv = (a, b) => ((parseChord(b).rootPc - parseChord(a).rootPc) % 12 + 12) % 12;
+      let cands;
+      if (q === "maj") cands = /#5|\+|aug/.test(t) ? [P("MM", 9)] : /#11/.test(t) ? [P("MAJ", 7)] : [P("MAJ", 0), P("MAJ", 7)];
+      else if (q === "dom") {
+        const toMinor = nextName && ["min", "hdim"].includes(chordQuality(nextName)) && iv(name, nextName) === 5;
+        cands = /alt|b9|#9|b13|#5|\+/.test(t) ? [P("MM", 1)] : /#11/.test(t) ? [P("MM", 7)] : toMinor ? [P("HM", 5), P("MAJ", 5)] : [P("MAJ", 5)];
+      }
+      else if (q === "hdim") cands = [P("MAJ", 1), P("MM", 3), P("HM", 10)];
+      else if (q === "dim") cands = [P("HM", 1)];
+      else if (/6|maj|M7/.test(t)) cands = [P("MM", 0)];
+      else {
+        const afterV = prevName && chordQuality(prevName) === "dom" && iv(prevName, name) === 5;
+        cands = afterV ? [P("MAJ", 3), P("MAJ", 10)] : [P("MAJ", 10), P("MAJ", 3), P("MAJ", 8)];
+      }
+      if (prevParent) { const m = cands.find(x => x.fam === prevParent.fam && x.root === prevParent.root); if (m) return m; }
+      return cands[0];
+    };
+    // 曲全体のコード進行から、小節（前半・後半）ごとの親スケールを決める
+    const planParents = (chordBars) => {
+      const flat = [];
+      chordBars.forEach((bar, bi) => String(bar || "").split(/\s+/).filter(Boolean).forEach((nm, h) => flat.push({ bi, h, nm })));
+      const plan = chordBars.map(() => []);
+      let prev = null;
+      flat.forEach((x, i) => {
+        const pn = flat[(i - 1 + flat.length) % flat.length].nm, nn = flat[(i + 1) % flat.length].nm;
+        prev = chordParent(x.nm, i > 0 ? pn : null, nn, prev);
+        plan[x.bi][x.h] = prev;
+      });
+      return plan;
+    };
+
     // ============ TAB運指プランナー（ボックスポジション最適化） ============
     // ・ボックス = 連続5フレット（b 〜 b+4）。フレーズの塊は必ず1つのボックス内に収める
     // ・ボックス移動（ポジションチェンジ）は動的計画法で最小回数・最短距離にし、
@@ -1893,7 +1967,11 @@
       const sd = Math.abs(p.stringIdx - c.stringIdx);
       if (sd > 1) cost += (sd - 1) * 4;                              // 弦飛びは控えめに
       if (p.midi === c.midi && (p.stringIdx !== c.stringIdx || p.fretNum !== c.fretNum)) cost += 6; // 同音連打は同じ場所で
-      if (p.box !== c.box) {
+      const bothPos = !!(p.posKey && c.posKey);
+      const moved = bothPos ? p.posKey !== c.posKey : p.box !== c.box;
+      if (moved && bothPos && p.par && c.par && (p.par.fam !== c.par.fam || p.par.root !== c.par.root) && Math.abs(c.box - p.box) <= 1) {
+        cost += 1.2;                                                  // コードが変わってスケールが変わっただけ（手の位置はほぼ同じ）
+      } else if (moved) {
         const d = Math.abs(c.box - p.box);
         let sc = 10 + d * 1.0;                                        // ポジション移動の基本コスト（距離に比例）
         if (gap >= 1) sc -= 3;                                       // 長い音・休符のあとは移動しやすい
@@ -1950,7 +2028,22 @@
         }
         if (cands.length === 0) cands.push({ stringIdx: 0, fret: "0", fretNum: 0, free: true, base: 50 });
         const states = [];
-        cands.forEach(c => {
+        // 7ポジション：親スケールが分かる音は、そのスケールの7つのポジションの中で置く
+        if (n.parent && !n.isHarm && force === -1) {
+          sevenPositions(n.parent).forEach(pos => cands.forEach(c => {
+            if (c.free) return;
+            let node = c.base, out = false;
+            if (pos.set.has(c.stringIdx + ":" + c.fretNum)) { /* ポジションの形の中 */ }
+            else if (c.fretNum >= pos.min && c.fretNum <= pos.max) node += 3;           // 形の外だが同じ手の範囲（半音のアプローチなど）
+            else {
+              const dist = c.fretNum < pos.min ? pos.min - c.fretNum : c.fretNum - pos.max;
+              if (dist > 4) return;
+              node += 8 + dist * 1.5; out = true;                                       // 一時的な寄り道
+            }
+            states.push({ ...c, box: pos.min, posKey: pos.key, posName: pos.name, posFull: pos.full, par: pos.par, out, midi: n.midi, node, absBeat: absBeatBase + n.beatPos });
+          }));
+        }
+        if (states.length === 0) cands.forEach(c => {
           for (let b = 1; b <= TAB_MAX_BOX; b++) {
             let node = c.base;
             let out = false;
@@ -2086,7 +2179,7 @@
                     return (
                       <g key={nIdx}>
                         {n.posLabel && !hideFrets && (
-                          <text x={xPos} y={TOP - 8} textAnchor="middle" fill="#b45309" fontSize="9.5" fontWeight="800" fontFamily="serif">{n.posLabel}</text>
+                          <text x={xPos - 5} y={TOP - 8} textAnchor="start" fill="#b45309" fontSize="9.5" fontWeight="800" fontFamily="serif">{n.posFull && <title>{n.posFull}</title>}{n.posLabel}</text>
                         )}
                         <rect x={xPos - tw / 2} y={yPos - 7.5} width={tw} height={15} rx="3" fill={active ? "#f59e0b" : "#ffffff"} />
                         <text x={xPos} y={yPos + 4.5} textAnchor="middle" fill={active ? "#ffffff" : (hideFrets ? "#94a3b8" : "#0f172a")}
@@ -2363,7 +2456,7 @@
       const t = String(chord.name || "").replace(/^[A-G][#b]?/, "").split("/")[0];
       const nm = (k) => PC_NAMES[(chord.rootPc + k) % 12];
       const out = [];
-      const add = (fam, k, mode, o) => out.push({ fam, pcs: shiftPcs(fam === "MM" ? MM_PCS : HM_PCS, k), mode,
+      const add = (fam, k, mode, o) => out.push({ fam, pcs: shiftPcs(fam === "MM" ? MM_PCS : HM_PCS, k), mode, par: { fam, root: (chord.rootPc + k) % 12 },
         hint: `${nm(k)} ${fam === "MM" ? "mel.min" : "har.min"}${mode ? "＝" + mode : ""}`, ...o });
       const nq = next ? chordQuality(next.name) : null;
       const down5 = next && ((next.rootPc - chord.rootPc + 12) % 12) === 5;      // 5度下（4度上）へ解決
@@ -2372,9 +2465,9 @@
       if (q === "maj") {
         if (/#5|\+|aug/.test(t)) { add("MM", 9, "リディアン♯5", { ct: [0, 4, 8, 11], color: [2, 6, 9], avoid: [] }); return out; }
         const lyd = /#11|#4/.test(t);
-        out.push({ fam: "MAJ", pcs: lyd ? [0, 2, 4, 6, 7, 9, 11] : [0, 2, 4, 5, 7, 9, 11], hint: `${nm(0)} ${lyd ? "リディアン" : "メジャー・スケール"}`,
+        out.push({ fam: "MAJ", par: { fam: "MAJ", root: (chord.rootPc + (lyd ? 7 : 0)) % 12 }, pcs: lyd ? [0, 2, 4, 6, 7, 9, 11] : [0, 2, 4, 5, 7, 9, 11], hint: `${nm(0)} ${lyd ? "リディアン" : "メジャー・スケール"}`,
           ct: [0, 4, 7, t.includes("6") ? 9 : 11], color: [2, 9], avoid: lyd ? [] : [5] });
-        out.push({ fam: "TRI", pcs: [0, 4, 7], hint: `${nm(0)} トライアド`, ct: [0, 4, 7], color: [], avoid: [] });
+        out.push({ fam: "TRI", par: { fam: "MAJ", root: chord.rootPc }, pcs: [0, 4, 7], hint: `${nm(0)} トライアド`, ct: [0, 4, 7], color: [], avoid: [] });
         return out;
       }
       if (q === "dom") {
@@ -2386,7 +2479,7 @@
         const toMinor = nq === "min" || nq === "hdim" || nq === "dim";
         if (wantMM || !toMinor) {
           add("MM", 1, "オルタード", { ct: [0, 4, 10], color: [1, 3, 6, 8], avoid: [] });
-          out.push({ fam: "PENT", pcs: shiftPcs([0, 3, 5, 7, 10], 3), hint: `${nm(3)}mペンタ＝オルタード`, ct: [10], color: [1, 3, 6, 8], avoid: [] });
+          out.push({ fam: "PENT", par: { fam: "MM", root: (chord.rootPc + 1) % 12 }, pcs: shiftPcs([0, 3, 5, 7, 10], 3), hint: `${nm(3)}mペンタ＝オルタード`, ct: [10], color: [1, 3, 6, 8], avoid: [] });
         }
         if (wantMM && toMinor) add("MM", 5, "ミクソ♭6", { ct: [0, 4, 7, 10], color: [2, 8], avoid: [5] });
         if (wantHM) add("HM", 5, "フリジアン・ドミナント", { ct: [0, 4, 7, 10], color: [1, 8], avoid: [5] });
@@ -2463,10 +2556,10 @@
             const o = msWalk(sc, st, pt);
             if (!o || !msLineOk(sc, o, [0, 2, 4, 6])) return;
             const cat = `MinorScale ${sc.hint} ${pt.k}`;
-            cells.push({ cat, p: ["8", "8", "8", "8", "8", "8", "8", "8"], d: o.map(v => "s" + v), authentic: true, ms: true, hint: sc.hint });
+            cells.push({ cat, p: ["8", "8", "8", "8", "8", "8", "8", "8"], d: o.map(v => "s" + v), authentic: true, ms: true, hint: sc.hint, msParents: [sc.par] });
             if (useRests) [...REST_MASKS].sort(() => Math.random() - 0.5).slice(0, 2).forEach(mask => {
               const r = applyMask(o, mask);
-              if (r.d.length >= 4) cells.push({ cat: `${cat} ${mask}`, p: r.p, d: r.d, authentic: true, ms: true, hint: sc.hint });
+              if (r.d.length >= 4) cells.push({ cat: `${cat} ${mask}`, p: r.p, d: r.d, authentic: true, ms: true, hint: sc.hint, msParents: [sc.par] });
             });
           }));
         });
@@ -2492,10 +2585,10 @@
           if (sc1.color.length + sc2.color.length && ![...o1.map(v => [sc1, v]), ...o2.map(v => [sc2, v])].some(([sc, v]) => sc.color.includes(((v % 12) + 12) % 12))) return;
           const hint = `${sc1.hint} | ${sc2.hint}`;
           const cat = `MinorScale ${hint} ${pt.k}/${pp.k}`;
-          cells.push({ cat, p: ["8", "8", "8", "8", "8", "8", "8", "8"], d: offs.map(v => "s" + v), authentic: true, ms: true, hint });
+          cells.push({ cat, p: ["8", "8", "8", "8", "8", "8", "8", "8"], d: offs.map(v => "s" + v), authentic: true, ms: true, hint, msParents: [sc1.par, sc2.par] });
           if (useRests) ["nnnhnnnh", "nnnrnnnn", "nhnnnnnr"].forEach(mask => {
             const r = applyMask(offs, mask);
-            cells.push({ cat: `${cat} ${mask}`, p: r.p, d: r.d, authentic: true, ms: true, hint });
+            cells.push({ cat: `${cat} ${mask}`, p: r.p, d: r.d, authentic: true, ms: true, hint, msParents: [sc1.par, sc2.par] });
           });
         });
       }))));
@@ -2686,7 +2779,7 @@
       cell.p.forEach((dt, ei) => {
         const b = BEATS_OF[dt] || .5;
         if (!dt.startsWith("z")) {
-          const ch = beat < 2 ? chord1 : chord2, rt = beat < 2 ? root1 : root2;
+          const ch = beat < 2 - 1e-6 ? chord1 : chord2, rt = beat < 2 - 1e-6 ? root1 : root2;
           const deg = cell.d[ni];
           const top = Array.isArray(deg) ? deg[0] : deg;
           const off = getChordDegrees(ch)[top];
@@ -3325,6 +3418,9 @@
 
         // 完コピ曲は全小節の音が分かっているので、曲全体を一度に最適化して運指を決める
         // （小節ごとに決めると、その場では良くても次の小節で不自然なポジションに追い込まれるため）
+        // 7ポジション・システム：小節（前半・後半）ごとの親スケール
+        const parentPlan = planParents(chords);
+        const parentAt = (bi, beat) => { const pp = parentPlan[bi] || []; return (beat >= 2 - 1e-6 && pp[1]) ? pp[1] : (pp[0] || null); };
         let preplanned = null;
         if (currentSong.isTranscription && currentSong.transcriptionBars && !currentSong.transcriptionTab) {
           const allNotes = [];
@@ -3337,7 +3433,7 @@
             barEv.forEach(([dt, tm, fl]) => {
               const r = resolveDuration(dt, tc); tc = r.tripCounter;
               if (!r.isRest && !prevTied) {
-                allNotes.push({ midi: Math.max(MIN_BASS_MIDI, Math.min(MAX_BASS_MIDI, topMidi(tm) + TRANS_OFFSET)), isHarm: false, beatPos: absBeat });
+                allNotes.push({ midi: Math.max(MIN_BASS_MIDI, Math.min(MAX_BASS_MIDI, topMidi(tm) + TRANS_OFFSET)), isHarm: false, beatPos: absBeat, parent: parentAt(mi, absBeat - mi * 4) });
               }
               prevTied = !r.isRest && !!(fl && fl.includes("-"));
               absBeat += r.durBeat;
@@ -3401,7 +3497,7 @@
                 const prevEv = evIdx > 0 ? barEvents[evIdx - 1] : (prevBarEv ? prevBarEv[prevBarEv.length - 1] : null);
                 const isTieTail = hasTie(prevEv);
 
-                const activeChord = measureBeat < 2 ? chord1 : chord2;
+                const activeChord = measureBeat < 2 - 1e-6 ? chord1 : chord2;
 
                 if (isRest) {
                   measureAbc += prefix + abcDur;
@@ -3443,6 +3539,7 @@
                       chordExtra: isChordEv ? trebleMidi.map(clampReal).filter(m => m !== realMidi) : null,
                       chordInfo: (currentSong.transcriptionInfo && currentSong.transcriptionInfo[globalMeasureIdx] && currentSong.transcriptionInfo[globalMeasureIdx][evIdx]) ||
                         (isChordEv && !currentSong.isChordMelody ? { style: "原曲の和音", runName: null, group: "t" + evIdx } : null), chordRef: activeChord,
+                      parent: parentAt(globalMeasureIdx, measureBeat),
                       fixedTab: (currentSong.transcriptionTab && currentSong.transcriptionTab[globalMeasureIdx]) ? currentSong.transcriptionTab[globalMeasureIdx][evIdx] : null
                     });
                   }
@@ -3566,7 +3663,9 @@
               let candidates = [];
 
               pool.forEach(candCell => {
-                const offs = [...candCell.d, ...(candCell.d2 || [])].flat().map(deg => (degrees1[deg] !== undefined ? degrees1[deg] : 0));
+                const allDegs = [...candCell.d, ...(candCell.d2 || [])].flat();
+                if (allDegs.some(deg => degrees1[deg] === undefined)) return;        // 計算できない音（範囲外）を含むフレーズは使わない（ルートの連打になるのを防ぐ）
+                const offs = allDegs.map(deg => degrees1[deg]);
                 const minOff = Math.min(...offs);
                 const maxOff = Math.max(...offs);
                 const firstOff = offs[0];
@@ -3658,21 +3757,25 @@
               // 1小節内に2つ目のコードがある場合、前半の最後の音から同音を避けて半音・全音で繋がるオクターブを選択
               let actualRoot2 = actualRoot1;
               if (c2Str) {
-                const midNoteIdx = Math.max(0, Math.floor(cell.d.length / 2) - 1);
-                const midLastMidi = actualRoot1 + (degrees1[cell.d[midNoteIdx]] || 0);
-                const secondHalfFirstOff = degrees2[cell.d[midNoteIdx + 1]] || 0;
-                actualRoot2 = chord2.roots[0];
-                let bestR2Score = 999;
-                for (let oct = 2; oct <= 6; oct++) {
-                  const r2 = chord2.rootPc + oct * 12;
-                  const offs2 = cell.d.flat().map(deg => (degrees2[deg] !== undefined ? degrees2[deg] : 0));
-                  if (r2 + Math.min(...offs2) < SOLO_MIN_MIDI || r2 + Math.max(...offs2) > SOLO_MAX_MIDI) continue;
-                  const j2 = Math.abs((r2 + secondHalfFirstOff) - midLastMidi);
-                  const r2Score = (j2 === 0) ? 50 : ((j2 <= 2) ? j2 : j2 * 2);
-                  if (r2Score < bestR2Score) {
-                    bestR2Score = r2Score;
-                    actualRoot2 = r2;
+                // 拍で前半・後半に分ける（音の数の半分ではなく、3拍目の頭から後半）
+                const noteBeats = [];
+                { let bt = 0, tc = 0; cell.p.forEach(dt => { const r = resolveDuration(dt, tc); tc = r.tripCounter; if (!r.isRest) noteBeats.push(bt); bt += r.durBeat; }); }
+                let firstIdx2 = noteBeats.findIndex(bt => bt >= 2 - 1e-6);   // 3連の誤差（1.9999…）も3拍目として扱う
+                if (firstIdx2 < 0) firstIdx2 = cell.d.length;
+                const offOf = (degs, deg) => { const v = Array.isArray(deg) ? deg[0] : deg; return degs[v] !== undefined ? degs[v] : 0; };
+                const midLastMidi = firstIdx2 > 0 ? actualRoot1 + offOf(degrees1, cell.d[firstIdx2 - 1]) : (prevLastMidi !== null ? prevLastMidi : actualRoot1);
+                const half2 = cell.d.slice(firstIdx2).flat().map(deg => (degrees2[deg] !== undefined ? degrees2[deg] : 0));
+                if (half2.length) {
+                  const secondHalfFirstOff = half2[0];
+                  let best = null;
+                  for (let oct = -1; oct <= 7; oct++) {                  // 後半のオフセットが大きい（+2オクターブ等）フレーズもあるので、ルートは低い側まで探す
+                    const r2 = chord2.rootPc + oct * 12;
+                    const j2 = Math.abs((r2 + secondHalfFirstOff) - midLastMidi);
+                    const outRange = Math.max(0, SOLO_MIN_MIDI - (r2 + Math.min(...half2))) + Math.max(0, (r2 + Math.max(...half2)) - SOLO_MAX_MIDI);
+                    const sc = outRange * 20 + ((j2 === 0) ? 50 : ((j2 <= 2) ? j2 : j2 * 2));
+                    if (!best || sc < best.sc) best = { sc, r2 };
                   }
+                  actualRoot2 = best.r2;
                 }
               }
 
@@ -3692,8 +3795,8 @@
                 tripCounter = dur.tripCounter;
 
                 
-                const activeChord = measureBeat < 2 ? chord1 : chord2;
-                const activeRoot = measureBeat < 2 ? actualRoot1 : actualRoot2;
+                const activeChord = measureBeat < 2 - 1e-6 ? chord1 : chord2;
+                const activeRoot = measureBeat < 2 - 1e-6 ? actualRoot1 : actualRoot2;
                 const degrees = getChordDegrees(activeChord);
 
                 if (isRest) {
@@ -3805,7 +3908,9 @@
                     chordMinMidi: activeRoot + Math.min(...chordOffsets),
                     chordMaxMidi: activeRoot + Math.max(...chordOffsets),
                     chordExtra: extraMidis.length ? extraMidis : null,
-                    chordInfo, chordRef: activeChord
+                    chordInfo, chordRef: activeChord,
+                    // Lv3+ のラインは使ったスケールのポジション、それ以外はコードから決めた親スケール
+                    parent: (cell.msParents && cell.msParents[(c2Str && measureBeat >= 2 - 1e-6) ? 1 : 0]) || parentAt(globalMeasureIdx, measureBeat)
                   });
 
                   noteIdx++;
@@ -3855,7 +3960,7 @@
               currentSong.transcriptionBars[globalMeasureIdx + 1].forEach(([dt, tm, fl]) => {
                 const r = resolveDuration(dt, ltc); ltc = r.tripCounter;
                 if (!r.isRest && !prevTied) {
-                  lookaheadNotes.push({ midi: Math.max(MIN_BASS_MIDI, Math.min(MAX_BASS_MIDI, topMidi(tm) + TRANS_OFFSET)), isHarm: false, beatPos: 4 + lb });
+                  lookaheadNotes.push({ midi: Math.max(MIN_BASS_MIDI, Math.min(MAX_BASS_MIDI, topMidi(tm) + TRANS_OFFSET)), isHarm: false, beatPos: 4 + lb, parent: parentAt(globalMeasureIdx + 1, lb) });
                 }
                 prevTied = !r.isRest && !!(fl && fl.includes("-"));
                 lb += r.durBeat;
@@ -3891,8 +3996,12 @@
             bestPlan.tabs.forEach((t, idx) => {
               const n = measureNotesData[idx];
               const prevBox = idx > 0 ? bestPlan.tabs[idx - 1].box : (prevTabState ? prevTabState.box : null);
-              let posLabel = null;
-              if (!t.fixed && (prevBox === null || prevBox !== t.box)) {
+              let posLabel = null, posFull = null;
+              const prevKey = idx > 0 ? bestPlan.tabs[idx - 1].posKey : (prevTabState ? prevTabState.posKey : null);
+              if (!t.fixed && t.posKey) {
+                // 7ポジション：ポジション（またはスケール）が変わったところに「6弦の開始音＋モード名」
+                if (t.posKey !== prevKey) { posLabel = t.posName; posFull = t.posFull; }
+              } else if (!t.fixed && (prevBox === null || prevBox !== t.box)) {
                 // ポジションが変わった箇所に、そのボックスで一番低いフレット（人差し指の位置）をローマ数字で表示
                 let lo = null;
                 for (let k = idx; k < bestPlan.tabs.length && bestPlan.tabs[k].box === t.box; k++) {
@@ -3906,9 +4015,9 @@
                 dur: n.dur,
                 label: n.label,
                 isMain: true,
-                tab: { stringIdx: t.stringIdx, fret: t.fret, fretNum: t.fretNum, box: t.box, out: !!t.out },
+                tab: { stringIdx: t.stringIdx, fret: t.fret, fretNum: t.fretNum, box: t.box, out: !!t.out, pos: t.posKey || null },
                 isHarm: n.isHarm,
-                posLabel
+                posLabel, posFull
               };
               measureTabNotes.push(mainEntry);
               const placedMidis = [];
